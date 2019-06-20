@@ -15,13 +15,18 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.wso2.carbon.identity.scim2.common.internal;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
+import org.osgi.service.component.annotations.ReferenceCardinality;
+import org.osgi.service.component.annotations.ReferencePolicy;
 import org.wso2.carbon.identity.core.util.IdentityCoreInitializedEvent;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.carbon.identity.scim2.common.listener.SCIMTenantMgtListener;
@@ -39,59 +44,48 @@ import org.wso2.charon3.core.config.SCIMUserSchemaExtensionBuilder;
 import org.wso2.charon3.core.exceptions.CharonException;
 import org.wso2.charon3.core.exceptions.InternalErrorException;
 
-
 import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/**
- * @scr.component name="identity.scim2.common" immediate="true"
- * @scr.reference name="identityCoreInitializedEventService"
- * interface="org.wso2.carbon.identity.core.util.IdentityCoreInitializedEvent" cardinality="1..1"
- * policy="dynamic" bind="setIdentityCoreInitializedEventService" unbind="unsetIdentityCoreInitializedEventService"
- * @scr.reference name="user.realmservice.default"
- * interface="org.wso2.carbon.user.core.service.RealmService" cardinality="1..1"
- * policy="dynamic" bind="setRealmService" unbind="unsetRealmService"
- */
+@Component(
+        name = "identity.scim2.common",
+        immediate = true)
 public class SCIMCommonComponent {
+
     private static Log logger = LogFactory.getLog(SCIMCommonComponent.class);
 
     ExecutorService executorService = Executors.newFixedThreadPool(1);
 
     private ServiceRegistration<TenantMgtListener> tenantMgtListenerServiceReg;
+
     private ServiceRegistration<UserOperationEventListener> userOperationEventListenerServiceReg;
 
-
+    @Activate
     protected void activate(ComponentContext ctx) {
-        try {
-            String filePath = IdentityUtil.getIdentityConfigDirPath() + File.separator +
-                              SCIMCommonConstants.CHARON_CONFIG_NAME;
 
+        try {
+            String filePath = IdentityUtil.getIdentityConfigDirPath() + File.separator + SCIMCommonConstants
+                    .CHARON_CONFIG_NAME;
             SCIMConfigProcessor scimConfigProcessor = SCIMConfigProcessor.getInstance();
             scimConfigProcessor.buildConfigFromFile(filePath);
-
             // reading user schema extension
             if (Boolean.parseBoolean(scimConfigProcessor.getProperty("user-schema-extension-enabled"))) {
-                String schemaFilePath =
-                        CarbonUtils.getCarbonConfigDirPath() + File.separator +
-                        SCIMConfigConstants.SCIM_SCHEMA_EXTENSION_CONFIG;
+                String schemaFilePath = CarbonUtils.getCarbonConfigDirPath() + File.separator + SCIMConfigConstants
+                        .SCIM_SCHEMA_EXTENSION_CONFIG;
                 SCIMUserSchemaExtensionBuilder.getInstance().buildUserSchemaExtension(schemaFilePath);
             }
-
-            //register UserOperationEventListener implementation
+            // register UserOperationEventListener implementation
             SCIMUserOperationListener scimUserOperationListener = new SCIMUserOperationListener();
-            userOperationEventListenerServiceReg = ctx.getBundleContext()
-                    .registerService(UserOperationEventListener.class, scimUserOperationListener, null);
-
-            //register scimTenantMgtListener implementation
+            userOperationEventListenerServiceReg = ctx.getBundleContext().registerService(UserOperationEventListener
+                    .class, scimUserOperationListener, null);
+            // register scimTenantMgtListener implementation
             SCIMTenantMgtListener scimTenantMgtListener = new SCIMTenantMgtListener();
             tenantMgtListenerServiceReg = ctx.getBundleContext().registerService(TenantMgtListener.class,
                     scimTenantMgtListener, null);
-
-            //Update super tenant user/group attributes.
+            // Update super tenant user/group attributes.
             AdminAttributeUtil.updateAdminUser(MultitenantConstants.SUPER_TENANT_ID, true);
             AdminAttributeUtil.updateAdminGroup(MultitenantConstants.SUPER_TENANT_ID);
-
             if (logger.isDebugEnabled()) {
                 logger.debug("SCIM Common component activated successfully.");
             }
@@ -103,12 +97,18 @@ public class SCIMCommonComponent {
     }
 
     protected void unsetIdentityCoreInitializedEventService(IdentityCoreInitializedEvent identityCoreInitializedEvent) {
-        /* reference IdentityCoreInitializedEvent service to guarantee that this component will wait until identity core
+    /* reference IdentityCoreInitializedEvent service to guarantee that this component will wait until identity core
          is started */
     }
 
+    @Reference(
+            name = "identityCoreInitializedEventService",
+            service = org.wso2.carbon.identity.core.util.IdentityCoreInitializedEvent.class,
+            cardinality = ReferenceCardinality.MANDATORY,
+            policy = ReferencePolicy.DYNAMIC,
+            unbind = "unsetIdentityCoreInitializedEventService")
     protected void setIdentityCoreInitializedEventService(IdentityCoreInitializedEvent identityCoreInitializedEvent) {
-        /* reference IdentityCoreInitializedEvent service to guarantee that this component will wait until identity core
+    /* reference IdentityCoreInitializedEvent service to guarantee that this component will wait until identity core
          is started */
     }
 
@@ -117,6 +117,12 @@ public class SCIMCommonComponent {
      *
      * @param realmService RealmService
      */
+    @Reference(
+            name = "user.realmservice.default",
+            service = org.wso2.carbon.user.core.service.RealmService.class,
+            cardinality = ReferenceCardinality.MANDATORY,
+            policy = ReferencePolicy.DYNAMIC,
+            unbind = "unsetRealmService")
     protected void setRealmService(RealmService realmService) {
 
         if (logger.isDebugEnabled()) {
@@ -136,11 +142,12 @@ public class SCIMCommonComponent {
         SCIMCommonComponentHolder.setRealmService(null);
     }
 
+    @Deactivate
     protected void deactivate(ComponentContext context) {
+
         if (tenantMgtListenerServiceReg != null) {
             tenantMgtListenerServiceReg.unregister();
         }
-
         if (userOperationEventListenerServiceReg != null) {
             userOperationEventListenerServiceReg.unregister();
         }
